@@ -165,14 +165,17 @@ async function handleTask(req, res) {
       }
     }
     taskId = typeof env?.task_id === "string" ? env.task_id : "?";
+    // A SIGNED request that is not a task envelope is the platform's
+    // preflight handshake (observed: signed, type != task type ->
+    // "wrong-type"). Answer it the same way as the unsigned one.
     if (env?.type && env.type !== "agent-games.proof-gatekeeper.v1") {
-      log({ route: "task", task_id: taskId, error: "wrong-type", ms: Date.now() - t0 });
-      return sendJson(res, 400, { decision: "REJECT", reason_code: REASON.INVALID, proof_tx: null }, CFG.hmacSecret || null);
+      log({ route: "task", task_id: "preflight", ms: Date.now() - t0 });
+      return sendJson(res, 200, { ok: true, protocolVersion: "v1" }, CFG.hmacSecret || null);
     }
     const input = env?.input;
     if (!input || typeof input !== "object") {
-      log({ route: "task", task_id: taskId, error: "missing-input", ms: Date.now() - t0 });
-      return sendJson(res, 400, { decision: "REJECT", reason_code: REASON.INVALID, proof_tx: null }, CFG.hmacSecret || null);
+      log({ route: "task", task_id: "preflight", ms: Date.now() - t0 });
+      return sendJson(res, 200, { ok: true, protocolVersion: "v1" }, CFG.hmacSecret || null);
     }
     proofTx = typeof input.proof_tx === "string" ? input.proof_tx : null;
 
