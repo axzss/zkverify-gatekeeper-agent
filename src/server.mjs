@@ -126,22 +126,43 @@ async function handleTask(req, res) {
   try {
     const raw = await readBody(req);
 
+    // 0. PREFLIGHT (unsigned handshake): the platform calls the
+    // registered endpoint URL directly with an unsigned request to
+    // verify the agent is alive and holds the HMAC secret. Accept it
+    // (signed response) when it is clearly not a task: no signature
+    // header AND the body is empty or not a task envelope. A real
+    // task is always signed, so an unsigned task envelope is still
+    // rejected by the HMAC check below.
+    const sigHeader = req.headers["x-agent-games-signature"];
+    let env0 = null;
+    let parseOk0 = false;
+    try { env0 = JSON.parse(raw.toString("utf8")); parseOk0 = true; } catch { parseOk0 = false; }
+    const isTaskEnvelope0 = parseOk0 && env0 && typeof env0 === "object"
+      && env0.type === "agent-games.proof-gatekeeper.v1"
+      && env0.input && typeof env0.input === "object";
+    if (!sigHeader && !isTaskEnvelope0) {
+      log({ route: "task", task_id: "preflight", ms: Date.now() - t0 });
+      return sendJson(res, 200, { ok: true, protocolVersion: "v1" }, CFG.hmacSecret || null);
+    }
+
     // 1. HMAC BEFORE parsing (fail closed when a secret is configured).
     if (CFG.hmacSecret) {
-      const v = verifySignature(CFG.hmacSecret, raw, req.headers["x-agent-games-signature"]);
+      const v = verifySignature(CFG.hmacSecret, raw, sigHeader);
       if (!v.ok) {
         log({ route: "task", task_id: taskId, error: "hmac-" + v.reason, ms: Date.now() - t0 });
         return sendJson(res, 401, { error: "invalid-signature" }, CFG.hmacSecret);
       }
     }
 
-    // 2. Parse envelope.
-    let env;
-    try {
-      env = JSON.parse(raw.toString("utf8"));
-    } catch {
-      log({ route: "task", error: "bad-json", ms: Date.now() - t0 });
-      return sendJson(res, 400, { error: "bad-json" }, CFG.hmacSecret || null);
+    // 2. Parse envelope (reuse the parse from step 0 when available).
+    let env = env0;
+    if (!parseOk0) {
+      try {
+        env = JSON.parse(raw.toString("utf8"));
+      } catch {
+        log({ route: "task", error: "bad-json", ms: Date.now() - t0 });
+        return sendJson(res, 400, { error: "bad-json" }, CFG.hmacSecret || null);
+      }
     }
     taskId = typeof env?.task_id === "string" ? env.task_id : "?";
     if (env?.type && env.type !== "agent-games.proof-gatekeeper.v1") {
