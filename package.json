@@ -1,0 +1,15 @@
+{
+  "name": "zkverify-gatekeeper-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Proof Gatekeeper agent for zkVerify Agent Games — HTTPS endpoint, 7-check decision logic, local Groth16 proof generation (snarkjs), Kurier submission.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node src/test.mjs"
+  },
+  "dependencies": {
+    "snarkjs": "^0.7.5"
+  }
+}

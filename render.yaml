@@ -1,0 +1,23 @@
+# Render Blueprint — one-click deploy of the Proof Gatekeeper agent.
+# Free tier: no credit card. Set the env vars in the Render dashboard.
+services:
+  - type: web
+    name: zkverify-gatekeeper-agent
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/server.mjs
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: AGENT_GAMES_HMAC_SECRET
+        sync: false
+      - key: KURIER_API_KEY
+        sync: false
+      - key: KURIER_NETWORK
+        value: mainnet
+      - key: GATEKEEPER_SALT
+        value: "0"
