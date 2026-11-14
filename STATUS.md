@@ -41,6 +41,44 @@
 - **Prover warmup** — server generates a dummy proof at boot so the
   first real task is fast (first fullProve is the slowest).
 
+## What is DONE — 14 Nov ~21:41 WIB (Arch, after Agent P)
+
+- **GitHub LINKED** — Settings → Accounts → GitHub ✓ Connected as **axzss**.
+- **Agent REGISTERED** — **EAGER-KESTREL-40**, event **Proof Gatekeeper only**,
+  repo `github.com/axzss/zkverify-gatekeeper-agent`. HMAC secret (one-time
+  dialog) saved by Arch to the protected box file
+  `/home/user/.zkverify/hmac-secret.txt` (0600) — never printed.
+- **Render FREE deploy LIVE** — service `srv-dbs6s1u7bikc73ep05v0`,
+  public URL **https://zkverify-gatekeeper-agent.onrender.com**,
+  deploy `dep-dbs6s2e7bikc73ep06og` (commit 2f3096e). Env vars set:
+  AGENT_GAMES_HMAC_SECRET, KURIER_NETWORK=mainnet, GATEKEEPER_SALT=0,
+  NODE_ENV=production. **KURIER_API_KEY intentionally NOT set yet**
+  (no key exists — kurier.xyz signup still pending).
+- **✅ ENDPOINT SAVED** (14 Nov ~21:41 WIB) —
+  `https://zkverify-gatekeeper-agent.onrender.com/agent`.
+  Agent list: **1 REGISTERED, 1 HEALTHY, 0 NEEDS ATTENTION**;
+  card shows **EAGER-KESTREL-40 — ACTIVE — PROOF GATEKEEPER**.
+- **✅ PLATFORM PREFLIGHT PASSED** — dashboard "Test preflight":
+  **"Preflight OK — Healthy · 252ms"**.
+- **✅ PRACTICE TASK VERIFIED** (14 Nov ~21:42 WIB, Practice Mode):
+  task `practice_fea9cb3d-93d5-4b61-baea-b563e3e2a326`,
+  trap **RECIPIENT_MISMATCH** → submitted **REJECT** (expected REJECT ✓),
+  reason code **RECIPIENT_MISMATCH** ✓, latency **3110 ms**,
+  proof **VERIFIED** ✓. This confirms the full loop end-to-end AND
+  resolves the open questions: **taskId / vk-hash / salt encodings are
+  CORRECT** (the platform verified the Groth16 proof, which it could
+  only do if the circuit inputs matched its expectations).
+- **Preflight-handshake fix (commits b1c819a + bda5a74, live on Render):**
+  the platform calls the registered endpoint URL directly for its
+  preflight. It is **SIGNED but carries a non-task type** — the first
+  version rejected it 401 (unsigned path) and then 400 "wrong-type",
+  so "Save changes" never completed (observed in Render logs).
+  Now /task and /agent answer ANY non-task request (unsigned empty,
+  signed wrong-type, signed minimal) with signed
+  `{ok:true, protocolVersion:"v1"}`. Real tasks are still decided
+  normally; unsigned task envelopes are still rejected 401
+  (fail-closed). Verified locally (5 cases) + live.
+
 ## What is NOT done — needs Arch (browser / dashboard)
 
 1. **DEPLOY (browser task, ~2 min, free, no card):**
