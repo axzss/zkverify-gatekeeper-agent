@@ -9,8 +9,10 @@
 //   3. parse envelope -> 4. decide() (7 checks, fail closed)
 //   5. APPROVE -> record proof_tx in seen-set
 //   6. generate Groth16 proof (skipped for PROOF_REUSED — no proof exists
-//      for a reused reference) -> 7. submit to Kurier + poll (best effort,
-//      bounded) -> 8. sign response + reply.
+//      for a reused reference) -> 7. submit to Kurier IN THE BACKGROUND
+//      (fire-and-forget — awaiting submit+poll cost ~20s and blew the
+//      platform's tighter practice deadline on 15 Nov) -> 8. sign
+//      response + reply immediately.
 // A correct decision is ALWAYS returned, even if proof generation or
 // Kurier fails — a missing proof costs -2, a timeout costs -2 AND the
 // decision, so never let a slow proof step eat the whole deadline.
@@ -101,7 +103,12 @@ function readBody(req, maxBytes = 1024 * 1024) {
 
 function sendJson(res, status, obj, secret) {
   const raw = JSON.stringify(obj);
-  const headers = { "content-type": "application/json" };
+  // CORS: the dashboard's browser-side preflight fetch runs from the
+  // agentgames.zkverify.io origin; without this header the browser
+  // blocks the response and the dashboard reports "FAILED (client)"
+  // even though the server answered in ~1ms. All sensitive paths are
+  // HMAC-gated, so an open origin is safe here.
+  const headers = { "content-type": "application/json", "access-control-allow-origin": "*" };
   if (secret) headers["x-agent-games-signature"] = signBody(secret, raw);
   res.writeHead(status, headers);
   res.end(raw);
@@ -205,22 +212,30 @@ async function handleTask(req, res) {
       proofStatus = "excluded-reused";
     }
 
-    // 6. Kurier submission (best effort, bounded — never eat the deadline).
+    // 6. Kurier submission (FIRE-AND-FORGET — never block the response).
+    //    The platform scores the decision + local proof; the on-chain
+    //    submission is a bonus. Awaiting submit+poll cost ~20s and blew
+    //    the platform's tighter practice deadline (observed 24s responses
+    //    on 15 Nov, practice dispatch timed out twice). Kick it off in
+    //    the background and answer now; the outcome is logged when done.
     if (proof && CFG.kurierKey) {
-      try {
-        const sub = await submitProof(CFG.kurierKey, proof, publicSignals, GATEKEEPER_VK_HASH, CFG.kurierNetwork);
-        if (sub?.jobId) {
-          const poll = await pollUntilFinalized(CFG.kurierKey, sub.jobId, {
-            timeoutMs: CFG.kurierPollTimeoutMs,
-            network: CFG.kurierNetwork,
-          });
-          kurierStatus = poll.finalized ? "Finalized" : `not-finalized(${poll.status})`;
-        } else {
-          kurierStatus = "submit-no-jobid";
-        }
-      } catch (e) {
-        kurierStatus = "error:" + String(e?.message || e).slice(0, 80);
-      }
+      submitProof(CFG.kurierKey, proof, publicSignals, GATEKEEPER_VK_HASH, CFG.kurierNetwork)
+        .then(async (sub) => {
+          if (sub?.jobId) {
+            const poll = await pollUntilFinalized(CFG.kurierKey, sub.jobId, {
+              timeoutMs: CFG.kurierPollTimeoutMs,
+              network: CFG.kurierNetwork,
+            });
+            kurierStatus = poll.finalized ? "Finalized" : `not-finalized(${poll.status})`;
+          } else {
+            kurierStatus = "submit-no-jobid";
+          }
+          log({ route: "task", task_id: taskId, decision, reason_code: reason, proof: proofStatus, kurier: kurierStatus, ms: Date.now() - t0 });
+        })
+        .catch((e) => {
+          kurierStatus = "error:" + String(e?.message || e).slice(0, 80);
+          log({ route: "task", task_id: taskId, decision, reason_code: reason, proof: proofStatus, kurier: kurierStatus, ms: Date.now() - t0 });
+        });
     }
 
     const body = { decision, reason_code: reason, proof_tx: proofTx };
@@ -239,6 +254,19 @@ async function handleTask(req, res) {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const path = url.pathname.replace(/\/+$/, "") || "/";
+
+  // CORS preflight (browser OPTIONS): answer so the dashboard's
+  // client-side preflight can read the response.
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+      "access-control-allow-headers": "content-type, x-agent-games-signature",
+      "access-control-max-age": "86400",
+    });
+    res.end();
+    return;
+  }
 
   if (req.method === "GET" && path === "/health") {
     return sendJson(res, 200, {
