@@ -122,6 +122,18 @@
   Keep-alive cron mitigates (restarts become rare). A reset could let
   a PROOF_REUSED trap slip through as an incorrect APPROVE (−6).
 - First proof after a cold start is the slowest; warmup at boot covers it.
-- The 60s deadline is comfortable: worst observed task latency ~2.2s
-  (proof) + Kurier poll (bounded ~20s, best-effort — the response is
-  still sent with the local proof if Kurier is slow).
+- **INCIDENT 15 Nov ~16:27 WIB (fixed same day, commit 6c5d25e):**
+  practice dispatch timed out twice; dashboard showed UNHEALTHY.
+  Root cause: Kurier submit+poll was AWAITED before responding —
+  task latency ~24s (proof ~2-4s + Kurier poll up to 20s), blowing
+  the platform's tighter practice deadline. Render logs proved the
+  requests DID arrive and were decided correctly
+  (REJECT/VK_SUBSTITUTION, REJECT/THRESHOLD_MISMATCH) — the platform
+  just never waited long enough for the answer. Fix: Kurier is now
+  fire-and-forget (background submit+poll, outcome logged); response
+  in ~1-2s. Also added CORS headers (dashboard preflight was blocked
+  by CORS and reported FAILED (client) despite ~1ms server answers).
+  Verified post-fix: practice task CORRECT DECISION (APPROVE=APPROVE),
+  latency 3.479 ms, Proof VERIFIED; dashboard 1 HEALTHY / 0 NEEDS
+  ATTENTION. Local test suite 9/9. Worst observed task latency now
+  ~3.5s (proof only).
